@@ -73,7 +73,7 @@ input,select,textarea{background:var(--bg);border:1px solid #334155;color:#fff;b
   <p id="fnote" class="note hide" style="color:#fbbf24">Opened as a local file, so OpenStreetMap blocks the map tiles (no referrer). In this file's folder run <code>python3 -m http.server 8000</code>, then open <code>http://localhost:8000/datevibe-osm.html</code>.</p></div>
  <div id="v-planned" class="hide" style="margin-top:16px"><div class="grid" id="pgrid"></div></div>
  <div id="v-visited" class="hide" style="margin-top:16px"><div class="grid" id="vgrid"></div></div>
- <p class="note" style="margin:30px 0">Place data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Addresses looked up with Nominatim. Ratings are only your own.</p>
+ <p class="note" style="margin:30px 0">Place data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Addresses looked up with Nominatim. Ratings are only your own. · Version 5 (chain tiles)</p>
 </main>
 
 <div id="modal" class="modal hide"><div class="sheet"><div class="in" id="mc"></div></div></div>
@@ -99,7 +99,7 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTi
 
 /* ===== data ===== */
 let chainMap=new Map(),lastChain=null;
-const norm=x=>String(x||'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+const norm=n=>String(n||'').toLowerCase().replace(/\(.*?\)/g,'').replace(/#\s*\d+/g,'').split(/\s[-–—@|]\s|,/)[0].replace(/\b(coffee|inc|llc|co)\b\.?/g,'').replace(/[^\p{L}\p{N}]/gu,'');
 function groups(list){
   chainMap=new Map();const out=[];
   list.forEach(s=>{
@@ -151,7 +151,7 @@ async function findPlaces(){
    nwr${a}[name][amenity~"^(cafe|restaurant|bar|pub|nightclub|theatre|arts_centre|cinema|marketplace|events_venue)$"];
    nwr${a}[name][tourism~"^(museum|gallery|zoo|theme_park|attraction|viewpoint)$"];
    nwr${a}[name][leisure~"^(park|nature_reserve|bowling_alley|miniature_golf|escape_game|amusement_arcade)$"];
-  );out center tags 500;`;
+  );out center tags 1500;`;
   $('stat').textContent='Searching OpenStreetMap…';$('load').disabled=true;
   let els=null;
   for(const ep of EPS){try{const r=await fetch(ep,{method:'POST',body:'data='+encodeURIComponent(q)});if(r.ok){els=(await r.json()).elements;break}}catch(e){}}
@@ -367,7 +367,7 @@ $('impf').onchange=async e=>{
   }catch(err){toast('That file is not a DateVibe backup')}
 };
 
-if(!CENTER)OSM=[];
+if(!CENTER||!OSM.every(x=>'brand' in x))OSM=[];
 build();render();
 $('place').textContent=PLACE||'Set a location';
 $('stat').textContent=CENTER?(OSM.length?'':'Tap “Find places” to load spots near here.'):'Set your location above to get started.';
