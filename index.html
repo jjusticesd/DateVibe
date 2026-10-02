@@ -49,6 +49,7 @@ input,select,textarea{background:var(--bg);border:1px solid #334155;color:#fff;b
  <div id="v-explore">
   <div class="panel">
    <div class="row" style="margin-top:0"><input id="loc" placeholder="City or address, e.g. Austin, TX" style="flex:2;min-width:180px"><button class="btn pri" id="setloc">Set location</button><button class="btn" id="geo">📍 Use my location</button></div>
+   <div id="locmsg" class="note" style="margin-top:8px"></div><div id="locres" class="row hide" style="margin-top:8px"></div>
    <div class="row">
     <input id="q" placeholder="Search spots…" style="flex:2;min-width:180px">
     <select id="sort" style="flex:1;min-width:150px">
@@ -97,6 +98,38 @@ const miles=(a,b,c,d)=>{const r=Math.PI/180,x=Math.sin((c-a)*r/2)**2+Math.cos(a*
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),3000)}
 
 /* ===== data ===== */
+let chainMap=new Map(),lastChain=null;
+const norm=x=>String(x||'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+function groups(list){
+  chainMap=new Map();const out=[];
+  list.forEach(s=>{
+    const k=s.id.startsWith('osm-')?norm(s.brand||(['nature','arts','fairs'].includes(s.cat)?'':s.name)):'';
+    if(!k){out.push(s);return}
+    let g=chainMap.get('c-'+k);
+    if(!g){g={chain:true,key:'c-'+k,name:s.brand||s.name,cat:s.cat,items:[]};chainMap.set(g.key,g);out.push(g)}
+    g.items.push(s)});
+  return out.map(g=>g.chain&&g.items.length===1?g.items[0]:g);
+}
+function chainCard(g){
+  const d=Math.min(...g.items.map(x=>x.dist)),pl=g.items.filter(x=>S.planned.includes(x.id)).length,vi=g.items.filter(x=>S.visited[x.id]).length;
+  const info=[pl?pl+' planned':'',vi?vi+' visited':''].filter(Boolean).join(' · ')||'Pick which one you want to go to';
+  return`<div class="card"><div class="img" data-chain="${esc(g.key)}">${CATS[g.cat][0]}</div><div class="body"><b>${esc(g.name)}</b>
+  <div class="meta"><span>${CATS[g.cat][1]}</span><span>${g.items.length} locations</span><span>from ${d} mi</span></div>
+  <div class="desc">${info}</div><div class="row" style="margin:0"><button class="btn pri" data-chain="${esc(g.key)}">Choose location</button></div></div></div>`;
+}
+function chainModal(key){
+  const g=chainMap.get(key);if(!g)return;lastChain=key;
+  const items=[...g.items].sort((a,b)=>a.dist-b.dist);
+  $('mc').innerHTML=`<div style="display:flex;justify-content:space-between;gap:8px"><h2 style="margin:0">${CATS[g.cat][0]} ${esc(g.name)}</h2><button class="btn" data-close>✕</button></div>
+  <p class="note">${items.length} locations. Pick the one you're going to.</p>
+  <div style="display:grid;gap:10px">${items.map(x=>{const pl=S.planned.includes(x.id),v=S.visited[x.id];
+   return`<div class="panel" style="margin:0;padding:12px"><b>${esc(x.addr||'No street address listed')}</b>
+   <div class="note">${x.dist} mi away${v?' · visited ⭐ '+esc(v.total):''}</div>
+   <div class="row" style="margin-top:8px"><button class="btn" data-open="${esc(x.id)}" data-fromchain>Details</button>
+   <button class="btn ${pl?'pri':''}" data-plan="${esc(x.id)}" data-rechain="${esc(key)}">${pl?'Planned ✓':'Plan this one'}</button>
+   <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${x.lat},${x.lng}">Directions</a></div></div>`}).join('')}</div>`;
+  $('modal').classList.remove('hide');
+}
 function all(){
   const m=new Map();
   [...Object.values(S.saved||{}),...OSM,...S.custom].forEach(s=>m.set(s.id,s));
@@ -126,7 +159,7 @@ async function findPlaces(){
   if(!els){$('stat').textContent='OpenStreetMap servers are busy. Try again in a minute.';return}
   OSM=els.map(e=>{const t=e.tags,lat=e.lat??e.center?.lat,lng=e.lon??e.center?.lon;if(!t.name||lat==null)return null;
     return{id:'osm-'+e.type[0]+e.id,name:t.name,cat:classify(t),lat,lng,
-      addr:[t['addr:housenumber'],t['addr:street']].filter(Boolean).join(' '),web:t.website||t['contact:website']||'',phone:t.phone||t['contact:phone']||'',hours:t.opening_hours||'',desc:t.description||''}}).filter(Boolean);
+      addr:[t['addr:housenumber'],t['addr:street']].filter(Boolean).join(' '),brand:t.brand||'',web:t.website||t['contact:website']||'',phone:t.phone||t['contact:phone']||'',hours:t.opening_hours||'',desc:t.description||''}}).filter(Boolean);
   saveOSM();$('stat').textContent=`Loaded ${OSM.length} places within ${Math.min(maxD,30)} mi.`;render();
 }
 
@@ -153,8 +186,8 @@ function card(s){
 }
 function render(){
   const f=filtered(),a=all();
-  $('rc').textContent=f.length;
-  $('grid').innerHTML=f.map(card).join('')||'<p class="note">No spots yet. Click “Find places” to load from OpenStreetMap, or add your own.</p>';
+  const G=groups(f);$('rc').textContent=G.length;
+  $('grid').innerHTML=G.map(g=>g.chain?chainCard(g):card(g)).join('')||'<p class="note">No spots yet. Click “Find places” to load from OpenStreetMap, or add your own.</p>';
   $('pgrid').innerHTML=a.filter(s=>S.planned.includes(s.id)).map(card).join('')||'<p class="note">Nothing planned yet.</p>';
   $('vgrid').innerHTML=a.filter(s=>S.visited[s.id]).map(s=>{const v=S.visited[s.id];
    return`<div class="card"><div class="body"><b>${esc(s.name)}</b><b style="font-size:28px;color:var(--ok)">${esc(v.total)}</b>
@@ -169,7 +202,8 @@ function details(id){
   const s=all().find(x=>x.id===id);if(!s)return;
   const v=S.visited[id],pl=S.planned.includes(id),mine=id.startsWith('my-');
   const link=u=>/^https?:\/\//i.test(u)?esc(u):'';
-  $('mc').innerHTML=`<div style="display:flex;justify-content:space-between;gap:8px"><h2 style="margin:0">${esc(s.name)}</h2><button class="btn" data-close>✕</button></div>
+  const back=lastChain&&chainMap.get(lastChain)?.items.some(x=>x.id===id);
+  $('mc').innerHTML=`${back?`<button class="btn" data-chain="${esc(lastChain)}" style="margin-bottom:10px">← All locations</button>`:''}<div style="display:flex;justify-content:space-between;gap:8px"><h2 style="margin:0">${esc(s.name)}</h2><button class="btn" data-close>✕</button></div>
   <p class="note">${CATS[s.cat][1]} · ${s.dist} mi${s.addr?' · '+esc(s.addr):''}</p>
   ${s.desc?`<p>${esc(s.desc)}</p>`:''}${s.hours?`<p class="note">Hours: ${esc(s.hours)}</p>`:''}${s.phone?`<p class="note">Phone: ${esc(s.phone)}</p>`:''}
   <div class="row"><button class="btn ${pl?'pri':''}" data-plan="${esc(id)}" data-reopen>${pl?'Planned ✓':'Save for later'}</button>
@@ -237,13 +271,15 @@ function tab(t){
   if(t==='map')initMap();
 }
 document.addEventListener('click',e=>{
-  const t=e.target.closest('[data-c],[data-open],[data-plan],[data-close],[data-del],[data-edit],[data-pick],[data-tab]');
-  if(!t){if(e.target.id==='modal')$('modal').classList.add('hide');return}
+  const t=e.target.closest('[data-c],[data-open],[data-plan],[data-close],[data-del],[data-edit],[data-pick],[data-tab],[data-loc],[data-chain]');
+  if(!t){if(e.target.id==='modal'){lastChain=null;$('modal').classList.add('hide')}return}
   const d=t.dataset;
   if(d.c)toggleCat(d.c);
-  else if(d.open)details(d.open);
-  else if(d.plan){const i=S.planned.indexOf(d.plan);i<0?(S.planned.push(d.plan),keep(d.plan)):S.planned.splice(i,1);save();render();if('reopen' in d)details(d.plan)}
-  else if('close' in d)$('modal').classList.add('hide');
+  else if(d.loc!==undefined)pick(LOCRES[+d.loc]);
+  else if(d.chain)chainModal(d.chain);
+  else if(d.open){if(!('fromchain' in d))lastChain=null;details(d.open)}
+  else if(d.plan){const i=S.planned.indexOf(d.plan);i<0?(S.planned.push(d.plan),keep(d.plan)):S.planned.splice(i,1);save();render();if('reopen' in d)details(d.plan);else if(d.rechain)chainModal(d.rechain)}
+  else if('close' in d){lastChain=null;$('modal').classList.add('hide')}
   else if(d.del){if(!confirm('Delete this place and its visit log?'))return;S.custom=S.custom.filter(x=>x.id!==d.del);S.planned=S.planned.filter(x=>x!==d.del);delete S.visited[d.del];save();$('modal').classList.add('hide');render()}
   else if(d.edit){draft={...S.custom.find(x=>x.id===d.edit)};addForm()}
   else if('pick' in d){readForm();picking=true;$('modal').classList.add('hide');tab('map');toast('Click the map to set the location')}
@@ -269,12 +305,26 @@ function setCenter(lat,lng,name){
   $('place').textContent=PLACE;$('stat').textContent='Tap “Find places” to load spots near here.';
   if(map)map.setView([lat,lng],11);drawMe();render();
 }
+let LOCRES=[];
+function locMsg(t,bad){const m=$('locmsg');m.textContent=t;m.style.color=bad?'#fbbf24':''}
+async function geoSearch(q){
+  const out=[];
+  try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&q='+encodeURIComponent(q));
+    if(r.ok)(await r.json()).forEach(g=>out.push({lat:+g.lat,lng:+g.lon,name:nameOf(g.address||{})||g.display_name.split(',')[0],full:g.display_name}))}catch(e){}
+  if(out.length)return out;
+  try{const r=await fetch('https://photon.komoot.io/api/?limit=5&q='+encodeURIComponent(q));
+    if(r.ok)(await r.json()).features.forEach(f=>{const p=f.properties||{};out.push({lat:f.geometry.coordinates[1],lng:f.geometry.coordinates[0],name:[p.name,p.state].filter(Boolean).join(', '),full:[p.name,p.county,p.state,p.country].filter(Boolean).join(', ')})})}catch(e){}
+  return out;
+}
+function pick(r){if(!r)return;setCenter(r.lat,r.lng,r.name);$('loc').value='';$('locres').classList.add('hide');locMsg('')}
 async function setFromText(){
-  const q=$('loc').value.trim();if(!q)return;$('stat').textContent='Looking up location…';
-  try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&q='+encodeURIComponent(q));const g=(await r.json())[0];
-    if(!g){toast('Location not found');return}
-    setCenter(+g.lat,+g.lon,nameOf(g.address||{})||g.display_name.split(',')[0]);$('loc').value='';
-  }catch(e){toast('Lookup failed. Check your connection.')}
+  const q=$('loc').value.trim();if(!q){locMsg('Type a city or address first.',true);return}
+  $('locres').classList.add('hide');locMsg('Searching…');
+  const res=await geoSearch(q);
+  if(!res.length){locMsg('No match, or the lookup service could not be reached. Try another spelling, or use “Use my location”.',true);return}
+  if(res.length===1){pick(res[0]);return}
+  LOCRES=res;locMsg('Pick the right one:');
+  const box=$('locres');box.innerHTML=res.map((r,i)=>`<button class="btn" data-loc="${i}">${esc(r.full)}</button>`).join('');box.classList.remove('hide');
 }
 $('setloc').onclick=setFromText;$('loc').onkeydown=e=>{if(e.key==='Enter')setFromText()};
 $('geo').onclick=()=>{
