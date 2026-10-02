@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DateVibe</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+:root{--bg:#020617;--card:#0f172a;--line:#1e293b;--mut:#94a3b8;--acc:#f43f5e;--ok:#10b981}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f1f5f9;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:16px}
+.wrap{max-width:1200px;margin:0 auto;padding:0 16px}
+h1{margin:0;font-size:24px}.tabs{display:flex;gap:20px;margin-top:10px;overflow-x:auto}
+.tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);padding:8px 0;font-weight:700;cursor:pointer;white-space:nowrap}
+.tab.on{color:var(--acc);border-color:var(--acc)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin:16px 0}
+input,select,textarea{background:var(--bg);border:1px solid #334155;color:#fff;border-radius:10px;padding:10px;font:inherit;width:100%}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.chip,.btn{background:#1e293b;border:1px solid #334155;color:#cbd5e1;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;text-decoration:none;display:inline-block}
+.chip.on,.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+.img{height:90px;background:linear-gradient(135deg,#1e293b,#4c1d35);display:flex;align-items:center;justify-content:center;font-size:36px;cursor:pointer}
+.body{padding:14px;display:flex;flex-direction:column;gap:8px;flex:1}.meta{display:flex;justify-content:space-between;color:var(--mut);font-size:12px}
+.desc{font-size:13px;color:var(--mut);flex:1}.hide{display:none!important}
+#map{height:70vh;border-radius:16px;border:1px solid var(--line)}
+.modal{position:fixed;inset:0;background:#020617ee;display:flex;align-items:center;justify-content:center;padding:16px;z-index:2000}
+.sheet{background:var(--card);border:1px solid #334155;border-radius:20px;max-width:520px;width:100%;max-height:90vh;overflow:auto}
+.sheet .in{padding:20px}.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.note{font-size:12px;color:var(--mut)}a{color:#60a5fa}.btn{color:#cbd5e1}.btn.pri,.btn.ok{color:#fff}
+.pin{font-size:22px;line-height:1;text-align:center}
+#toast{position:fixed;bottom:20px;right:20px;background:#1e293b;border:1px solid #475569;padding:12px 18px;border-radius:12px;opacity:0;transition:.3s;z-index:3000;pointer-events:none}
+#toast.on{opacity:1}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>🔥 DateVibe <span class="note" id="place">Set a location</span></h1>
+  <div class="tabs">
+    <button class="tab on" data-tab="explore">Explore</button>
+    <button class="tab" data-tab="map">Map</button>
+    <button class="tab" data-tab="planned">Planned (<span id="pc">0</span>)</button>
+    <button class="tab" data-tab="visited">Visited (<span id="vc">0</span>)</button>
+  </div>
+</div></header>
+
+<main class="wrap">
+ <div id="v-explore">
+  <div class="panel">
+   <div class="row" style="margin-top:0"><input id="loc" placeholder="City or address, e.g. Austin, TX" style="flex:2;min-width:180px"><button class="btn pri" id="setloc">Set location</button><button class="btn" id="geo">📍 Use my location</button></div>
+   <div class="row">
+    <input id="q" placeholder="Search spots…" style="flex:2;min-width:180px">
+    <select id="sort" style="flex:1;min-width:150px">
+      <option value="dist">Closest</option><option value="mine">My rating</option><option value="name">Name A–Z</option>
+    </select>
+   </div>
+   <div class="row" id="cats"></div>
+   <div class="row"><span class="note">Max distance</span>
+    <input type="range" id="dist" min="1" max="30" value="10" style="flex:1"><b id="dl">10 mi</b></div>
+   <div class="row">
+    <button class="btn pri" id="load">🔎 Find places (OpenStreetMap)</button>
+    <button class="btn ok" id="add">＋ Add a place</button>
+    <button class="btn" id="exp">⬇ Export data</button><button class="btn" id="imp">⬆ Import data</button><input type="file" id="impf" accept="application/json,.json" class="hide">
+    <span class="note" id="stat"></span>
+   </div>
+  </div>
+  <div class="note" style="margin-bottom:10px"><b id="rc">0</b> spots</div>
+  <div class="grid" id="grid"></div>
+ </div>
+ <div id="v-map" class="hide" style="margin-top:16px"><div id="map"></div>
+  <p id="fnote" class="note hide" style="color:#fbbf24">Opened as a local file, so OpenStreetMap blocks the map tiles (no referrer). In this file's folder run <code>python3 -m http.server 8000</code>, then open <code>http://localhost:8000/datevibe-osm.html</code>.</p></div>
+ <div id="v-planned" class="hide" style="margin-top:16px"><div class="grid" id="pgrid"></div></div>
+ <div id="v-visited" class="hide" style="margin-top:16px"><div class="grid" id="vgrid"></div></div>
+ <p class="note" style="margin:30px 0">Place data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Addresses looked up with Nominatim. Ratings are only your own.</p>
+</main>
+
+<div id="modal" class="modal hide"><div class="sheet"><div class="in" id="mc"></div></div></div>
+<div id="toast"></div>
+
+<script>
+let CENTER=null,PLACE='',me=null;
+try{const l=JSON.parse(localStorage.getItem('datevibe-loc')||'null');if(l){CENTER={lat:l.lat,lng:l.lng};PLACE=l.name||''}}catch(e){}
+const CATS={cafes:['☕','Cafes'],restaurants:['🍽️','Restaurants'],games:['🎲','Activities'],arts:['🎨','Arts & History'],fairs:['🎪','Events & Markets'],nature:['🌲','Nature'],nightlife:['🍸','Nightlife']};
+const EPS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
+
+let S={planned:[],visited:{},custom:[],saved:{}},OSM=[];
+try{S=Object.assign(S,JSON.parse(localStorage.getItem('datevibe-osm')||'{}'))}catch(e){}
+try{OSM=JSON.parse(localStorage.getItem('datevibe-osmcache')||'[]')}catch(e){}
+const save=()=>{try{localStorage.setItem('datevibe-osm',JSON.stringify(S))}catch(e){toast('Could not save (storage full or blocked)')}};
+const saveOSM=()=>{try{localStorage.setItem('datevibe-osmcache',JSON.stringify(OSM))}catch(e){}};
+let cats=new Set(['all']),maxD=10,map=null,layer=null,picking=false,draft=null;
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const miles=(a,b,c,d)=>{const r=Math.PI/180,x=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2;return 3958.8*2*Math.asin(Math.sqrt(x))};
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),3000)}
+
+/* ===== data ===== */
+function all(){
+  const m=new Map();
+  [...Object.values(S.saved||{}),...OSM,...S.custom].forEach(s=>m.set(s.id,s));
+  return [...m.values()].map(s=>({...s,dist:CENTER?+miles(CENTER.lat,CENTER.lng,s.lat,s.lng).toFixed(1):0}));
+}
+function classify(t){
+  const a=t.amenity,r=t.tourism,l=t.leisure;
+  if(a==='cafe')return'cafes';if(a==='restaurant')return'restaurants';
+  if(['bar','pub','nightclub'].includes(a))return'nightlife';
+  if(['theatre','arts_centre'].includes(a)||['museum','gallery'].includes(r))return'arts';
+  if(['marketplace','events_venue'].includes(a))return'fairs';
+  if(['park','nature_reserve'].includes(l)||r==='viewpoint')return'nature';
+  return'games';
+}
+async function findPlaces(){
+  if(!CENTER){toast('Set a location first');return}
+  const R=Math.round(Math.min(maxD,30)*1609),a=`(around:${R},${CENTER.lat},${CENTER.lng})`;
+  const q=`[out:json][timeout:30];(
+   nwr${a}[name][amenity~"^(cafe|restaurant|bar|pub|nightclub|theatre|arts_centre|cinema|marketplace|events_venue)$"];
+   nwr${a}[name][tourism~"^(museum|gallery|zoo|theme_park|attraction|viewpoint)$"];
+   nwr${a}[name][leisure~"^(park|nature_reserve|bowling_alley|miniature_golf|escape_game|amusement_arcade)$"];
+  );out center tags 500;`;
+  $('stat').textContent='Searching OpenStreetMap…';$('load').disabled=true;
+  let els=null;
+  for(const ep of EPS){try{const r=await fetch(ep,{method:'POST',body:'data='+encodeURIComponent(q)});if(r.ok){els=(await r.json()).elements;break}}catch(e){}}
+  $('load').disabled=false;
+  if(!els){$('stat').textContent='OpenStreetMap servers are busy. Try again in a minute.';return}
+  OSM=els.map(e=>{const t=e.tags,lat=e.lat??e.center?.lat,lng=e.lon??e.center?.lon;if(!t.name||lat==null)return null;
+    return{id:'osm-'+e.type[0]+e.id,name:t.name,cat:classify(t),lat,lng,
+      addr:[t['addr:housenumber'],t['addr:street']].filter(Boolean).join(' '),web:t.website||t['contact:website']||'',phone:t.phone||t['contact:phone']||'',hours:t.opening_hours||'',desc:t.description||''}}).filter(Boolean);
+  saveOSM();$('stat').textContent=`Loaded ${OSM.length} places within ${Math.min(maxD,30)} mi.`;render();
+}
+
+/* ===== filters + render ===== */
+function build(){$('cats').innerHTML='<button class="chip on" data-c="all">All</button>'+Object.entries(CATS).map(([k,v])=>`<button class="chip" data-c="${k}">${v[0]} ${v[1]}</button>`).join('')}
+function toggleCat(v){
+  if(v==='all')cats.clear();else{cats.delete('all');cats.has(v)?cats.delete(v):cats.add(v)}
+  if(!cats.size)cats.add('all');
+  document.querySelectorAll('[data-c]').forEach(b=>b.classList.toggle('on',cats.has(b.dataset.c)));render();
+}
+function filtered(){
+  const q=$('q').value.toLowerCase(),s=$('sort').value,my=x=>parseFloat(S.visited[x.id]?.total)||0;
+  const r=all().filter(x=>(x.name+' '+x.desc+' '+x.addr).toLowerCase().includes(q)&&(cats.has('all')||cats.has(x.cat))&&(!CENTER||x.dist<=maxD));
+  r.sort((a,b)=>s==='mine'?my(b)-my(a):s==='name'?a.name.localeCompare(b.name):a.dist-b.dist);
+  return r;
+}
+function card(s){
+  const pl=S.planned.includes(s.id),v=S.visited[s.id];
+  return`<div class="card"><div class="img" data-open="${esc(s.id)}">${CATS[s.cat][0]}</div><div class="body"><b>${esc(s.name)}</b>
+  <div class="meta"><span>${CATS[s.cat][1]}</span><span>${v?'⭐ '+esc(v.total):''}</span><span>${s.dist} mi</span></div>
+  <div class="desc">${esc(s.addr||s.desc||'')}${s.id.startsWith('my-')?' · <i>added by you</i>':''}</div>
+  <div class="row" style="margin:0"><button class="btn" data-open="${esc(s.id)}">Details</button>
+  <button class="btn ${pl?'pri':''}" data-plan="${esc(s.id)}">${pl?'Planned ✓':'Plan'}</button></div></div></div>`;
+}
+function render(){
+  const f=filtered(),a=all();
+  $('rc').textContent=f.length;
+  $('grid').innerHTML=f.map(card).join('')||'<p class="note">No spots yet. Click “Find places” to load from OpenStreetMap, or add your own.</p>';
+  $('pgrid').innerHTML=a.filter(s=>S.planned.includes(s.id)).map(card).join('')||'<p class="note">Nothing planned yet.</p>';
+  $('vgrid').innerHTML=a.filter(s=>S.visited[s.id]).map(s=>{const v=S.visited[s.id];
+   return`<div class="card"><div class="body"><b>${esc(s.name)}</b><b style="font-size:28px;color:var(--ok)">${esc(v.total)}</b>
+   <div class="note">Had/did: ${esc(v.items)}</div><div class="note">Food ${esc(v.food)} · Vibe ${esc(v.vibe)} · Service ${esc(v.service)}</div>
+   ${v.notes?`<div class="desc">“${esc(v.notes)}”</div>`:''}<button class="btn" data-open="${esc(s.id)}">Details</button></div></div>`}).join('')||'<p class="note">No visits logged yet.</p>';
+  $('pc').textContent=S.planned.length;$('vc').textContent=Object.keys(S.visited).length;
+  drawMarkers(f);
+}
+
+/* ===== details ===== */
+function details(id){
+  const s=all().find(x=>x.id===id);if(!s)return;
+  const v=S.visited[id],pl=S.planned.includes(id),mine=id.startsWith('my-');
+  const link=u=>/^https?:\/\//i.test(u)?esc(u):'';
+  $('mc').innerHTML=`<div style="display:flex;justify-content:space-between;gap:8px"><h2 style="margin:0">${esc(s.name)}</h2><button class="btn" data-close>✕</button></div>
+  <p class="note">${CATS[s.cat][1]} · ${s.dist} mi${s.addr?' · '+esc(s.addr):''}</p>
+  ${s.desc?`<p>${esc(s.desc)}</p>`:''}${s.hours?`<p class="note">Hours: ${esc(s.hours)}</p>`:''}${s.phone?`<p class="note">Phone: ${esc(s.phone)}</p>`:''}
+  <div class="row"><button class="btn ${pl?'pri':''}" data-plan="${esc(id)}" data-reopen>${pl?'Planned ✓':'Save for later'}</button>
+  <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lng}">Google Maps</a>
+  <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}">Directions</a>
+  ${link(s.web)?`<a class="btn" target="_blank" rel="noopener" href="${link(s.web)}">Website</a>`:''}
+  ${mine?`<button class="btn" data-edit="${esc(id)}">Edit</button><button class="btn" data-del="${esc(id)}">Delete</button>`:''}</div>
+  <hr style="border-color:var(--line);margin:18px 0"><b>${v?'Update your visit':'Log a visit'}</b>
+  <form id="vf" data-id="${esc(id)}" style="display:grid;gap:10px;margin-top:10px">
+   <input name="items" required placeholder="What did you have / do?" value="${esc(v?.items||'')}">
+   <div class="g3"><input name="food" type="number" min="1" max="5" step="0.5" required placeholder="Food/Act" value="${esc(v?.food||'')}">
+   <input name="vibe" type="number" min="1" max="5" step="0.5" required placeholder="Vibe" value="${esc(v?.vibe||'')}">
+   <input name="service" type="number" min="1" max="5" step="0.5" required placeholder="Service" value="${esc(v?.service||'')}"></div>
+   <textarea name="notes" rows="2" placeholder="Private notes">${esc(v?.notes||'')}</textarea>
+   <button class="btn ok">Save visit (overall = average)</button></form>`;
+  $('modal').classList.remove('hide');
+}
+
+/* ===== add / edit place ===== */
+function addForm(){
+  const d=draft;
+  $('mc').innerHTML=`<div style="display:flex;justify-content:space-between"><h2 style="margin:0">${d.id?'Edit place':'Add a place'}</h2><button class="btn" data-close>✕</button></div>
+  <form id="af" style="display:grid;gap:10px;margin-top:14px">
+   <input name="name" required placeholder="Name" value="${esc(d.name)}">
+   <select name="cat">${Object.entries(CATS).map(([k,v])=>`<option value="${k}" ${d.cat===k?'selected':''}>${v[0]} ${v[1]}</option>`).join('')}</select>
+   <input name="addr" placeholder="Street address (optional if you pick on the map)" value="${esc(d.addr)}">
+   <textarea name="desc" rows="2" placeholder="Why you want to go / notes">${esc(d.desc)}</textarea>
+   <div class="note">${d.lat!=null?`📍 Location set (${(+d.lat).toFixed(4)}, ${(+d.lng).toFixed(4)})`:'No location yet. Enter an address or pick on the map.'}</div>
+   <div class="row" style="margin:0"><button type="button" class="btn" data-pick>📍 Pick on map</button><button class="btn ok">Save place</button></div></form>`;
+  $('modal').classList.remove('hide');
+}
+function readForm(){const f=new FormData($('af'));Object.assign(draft,{name:f.get('name'),cat:f.get('cat'),addr:f.get('addr'),desc:f.get('desc')})}
+async function savePlace(){
+  readForm();
+  if(draft.lat==null){
+    if(!draft.addr.trim()){toast('Add an address or pick a spot on the map');return}
+    try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(draft.addr)+(CENTER?`&viewbox=${CENTER.lng-.5},${CENTER.lat+.5},${CENTER.lng+.5},${CENTER.lat-.5}`:''));const j=await r.json();
+      if(!j[0]){toast('Address not found. Try the map picker.');return}draft.lat=+j[0].lat;draft.lng=+j[0].lon}
+    catch(e){toast('Address lookup failed. Try the map picker.');return}
+  }
+  const p={id:draft.id||'my-'+Date.now(),name:draft.name.trim(),cat:draft.cat,lat:draft.lat,lng:draft.lng,addr:draft.addr.trim(),desc:draft.desc.trim()};
+  const i=S.custom.findIndex(x=>x.id===p.id);i<0?S.custom.push(p):S.custom[i]=p;
+  save();$('modal').classList.add('hide');toast('Place saved');render();
+}
+
+/* ===== map ===== */
+function initMap(){
+  if(map){setTimeout(()=>map.invalidateSize(),50);return}
+  map=L.map('map').setView(CENTER?[CENTER.lat,CENTER.lng]:[20,0],CENTER?11:2);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+  if(location.protocol==='file:')$('fnote').classList.remove('hide');
+  layer=L.layerGroup().addTo(map);drawMe();
+  map.on('click',e=>{if(!picking)return;picking=false;draft.lat=e.latlng.lat;draft.lng=e.latlng.lng;tab('explore');addForm();toast('Location set')});
+  drawMarkers(filtered());
+}
+function drawMarkers(list){
+  if(!layer)return;layer.clearLayers();
+  list.forEach(s=>{const m=L.marker([s.lat,s.lng],{title:s.name,icon:L.divIcon({className:'',html:`<div class="pin">${CATS[s.cat][0]}</div>`,iconSize:[26,26]})});
+    m.on('click',()=>{if(!picking)details(s.id)});m.addTo(layer)});
+}
+
+/* ===== events ===== */
+function tab(t){
+  ['explore','map','planned','visited'].forEach(x=>{$('v-'+x).classList.toggle('hide',x!==t);document.querySelector(`[data-tab=${x}]`).classList.toggle('on',x===t)});
+  if(t==='map')initMap();
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-c],[data-open],[data-plan],[data-close],[data-del],[data-edit],[data-pick],[data-tab]');
+  if(!t){if(e.target.id==='modal')$('modal').classList.add('hide');return}
+  const d=t.dataset;
+  if(d.c)toggleCat(d.c);
+  else if(d.open)details(d.open);
+  else if(d.plan){const i=S.planned.indexOf(d.plan);i<0?(S.planned.push(d.plan),keep(d.plan)):S.planned.splice(i,1);save();render();if('reopen' in d)details(d.plan)}
+  else if('close' in d)$('modal').classList.add('hide');
+  else if(d.del){if(!confirm('Delete this place and its visit log?'))return;S.custom=S.custom.filter(x=>x.id!==d.del);S.planned=S.planned.filter(x=>x!==d.del);delete S.visited[d.del];save();$('modal').classList.add('hide');render()}
+  else if(d.edit){draft={...S.custom.find(x=>x.id===d.edit)};addForm()}
+  else if('pick' in d){readForm();picking=true;$('modal').classList.add('hide');tab('map');toast('Click the map to set the location')}
+  else if(d.tab){picking=false;tab(d.tab)}
+});
+document.addEventListener('submit',e=>{
+  e.preventDefault();
+  if(e.target.id==='af')return savePlace();
+  if(e.target.id!=='vf')return;
+  const f=new FormData(e.target),n=k=>parseFloat(f.get(k));
+  S.visited[e.target.dataset.id]={items:f.get('items'),food:n('food'),vibe:n('vibe'),service:n('service'),notes:f.get('notes'),total:((n('food')+n('vibe')+n('service'))/3).toFixed(1),ts:Date.now()};
+  keep(e.target.dataset.id);save();toast('Visit saved');$('modal').classList.add('hide');render();
+});
+$('q').oninput=render;$('sort').onchange=render;$('load').onclick=findPlaces;
+$('add').onclick=()=>{draft={name:'',cat:'restaurants',addr:'',desc:'',lat:null,lng:null};addForm()};
+$('dist').oninput=e=>{maxD=+e.target.value;$('dl').textContent=maxD+' mi';render()};
+
+const nameOf=ad=>[ad.city||ad.town||ad.village||ad.county,ad.state].filter(Boolean).join(', ');
+function drawMe(){if(!map||!CENTER)return;if(me)map.removeLayer(me);me=L.circleMarker([CENTER.lat,CENTER.lng],{radius:7,color:'#f43f5e'}).addTo(map)}
+function setCenter(lat,lng,name){
+  CENTER={lat,lng};PLACE=name||'Your location';OSM=[];saveOSM();
+  try{localStorage.setItem('datevibe-loc',JSON.stringify({lat,lng,name:PLACE}))}catch(e){}
+  $('place').textContent=PLACE;$('stat').textContent='Tap “Find places” to load spots near here.';
+  if(map)map.setView([lat,lng],11);drawMe();render();
+}
+async function setFromText(){
+  const q=$('loc').value.trim();if(!q)return;$('stat').textContent='Looking up location…';
+  try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&q='+encodeURIComponent(q));const g=(await r.json())[0];
+    if(!g){toast('Location not found');return}
+    setCenter(+g.lat,+g.lon,nameOf(g.address||{})||g.display_name.split(',')[0]);$('loc').value='';
+  }catch(e){toast('Lookup failed. Check your connection.')}
+}
+$('setloc').onclick=setFromText;$('loc').onkeydown=e=>{if(e.key==='Enter')setFromText()};
+$('geo').onclick=()=>{
+  if(!navigator.geolocation){toast('Location is not supported here');return}
+  navigator.geolocation.getCurrentPosition(async p=>{
+    const a=p.coords.latitude,b=p.coords.longitude;let n='Your location';
+    try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&lat=${a}&lon=${b}`);n=nameOf((await r.json()).address||{})||n}catch(e){}
+    setCenter(a,b,n)},()=>toast('Location permission denied'));
+};
+
+function keep(id){if(!id.startsWith('osm-')||S.saved[id])return;const s=OSM.find(x=>x.id===id);if(s)S.saved[id]={...s}}
+$('exp').onclick=()=>{
+  const data={app:'datevibe',v:1,exported:new Date().toISOString(),planned:S.planned,visited:S.visited,custom:S.custom,saved:S.saved,location:CENTER?{lat:CENTER.lat,lng:CENTER.lng,name:PLACE}:null};
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+  a.download='datevibe-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Backup downloaded');
+};
+$('imp').onclick=()=>$('impf').click();
+$('impf').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  try{
+    const d=JSON.parse(await f.text());if(d.app!=='datevibe')throw 0;
+    const num=x=>typeof x==='number'&&isFinite(x),str=x=>String(x??'').slice(0,500),idok=/^(osm-[nwr]\d+|my-\d+)$/;
+    let nc=0,np=0,nv=0;
+    (Array.isArray(d.custom)?d.custom:[]).forEach(c=>{
+      if(!c||!/^my-\d+$/.test(c.id)||!num(c.lat)||!num(c.lng)||!CATS[c.cat]||!c.name)return;
+      const p={id:c.id,name:str(c.name),cat:c.cat,lat:c.lat,lng:c.lng,addr:str(c.addr),desc:str(c.desc)};
+      const i=S.custom.findIndex(x=>x.id===p.id);i<0?S.custom.push(p):S.custom[i]=p;nc++});
+    Object.entries(d.saved&&typeof d.saved==='object'?d.saved:{}).forEach(([id,c])=>{
+      if(!/^osm-[nwr]\d+$/.test(id)||!c||!num(c.lat)||!num(c.lng)||!CATS[c.cat]||!c.name)return;
+      S.saved[id]={id,name:str(c.name),cat:c.cat,lat:c.lat,lng:c.lng,addr:str(c.addr),web:str(c.web),phone:str(c.phone),hours:str(c.hours),desc:str(c.desc)}});
+    (Array.isArray(d.planned)?d.planned:[]).forEach(id=>{if(typeof id==='string'&&idok.test(id)&&!S.planned.includes(id)){S.planned.push(id);np++}});
+    Object.entries(d.visited&&typeof d.visited==='object'?d.visited:{}).forEach(([id,v])=>{
+      if(!idok.test(id)||!v||![v.food,v.vibe,v.service].every(num))return;
+      const cur=S.visited[id];if(cur&&(cur.ts||0)>=(v.ts||0))return;
+      S.visited[id]={items:str(v.items),food:v.food,vibe:v.vibe,service:v.service,notes:str(v.notes),total:((v.food+v.vibe+v.service)/3).toFixed(1),ts:num(v.ts)?v.ts:Date.now()};nv++});
+    save();
+    if(!CENTER&&d.location&&num(d.location.lat)&&num(d.location.lng))setCenter(d.location.lat,d.location.lng,str(d.location.name));
+    render();toast(`Imported ${nc} added places, ${np} planned, ${nv} visits`);
+  }catch(err){toast('That file is not a DateVibe backup')}
+};
+
+if(!CENTER)OSM=[];
+build();render();
+$('place').textContent=PLACE||'Set a location';
+$('stat').textContent=CENTER?(OSM.length?'':'Tap “Find places” to load spots near here.'):'Set your location above to get started.';
+</script>
+</body>
+</html>
